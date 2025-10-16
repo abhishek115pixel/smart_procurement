@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Smart Procurement Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+<div class="container py-4">
+  <h1 class="mb-4">🏭 Smart Procurement Dashboard</h1>
+
+  <!-- Material Prices -->
+  <div class="card mb-4">
+    <div class="card-header bg-primary text-white">📊 Real-Time Material Prices</div>
+    <div class="card-body">
+      <table class="table table-striped" id="priceTable">
+        <thead class="table-dark"><tr><th>Material</th><th>Price (₹)</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button class="btn btn-success" onclick="updatePrices()">Simulate Price Update</button>
+    </div>
+  </div>
+
+  <!-- Inventory -->
+  <div class="card mb-4">
+    <div class="card-header bg-secondary text-white">📦 Inventory</div>
+    <div class="card-body">
+      <table class="table table-striped" id="inventoryTable">
+        <thead class="table-dark"><tr><th>Material</th><th>Quantity</th><th>Unit</th><th>Reorder Threshold</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Supplier Info (for demo, still loads steel) -->
+  <div class="card mb-4">
+    <div class="card-header bg-info text-white">🤝 Supplier Info</div>
+    <div class="card-body">
+      <table class="table table-striped" id="supplierTable">
+        <thead class="table-dark"><tr><th>Name</th><th>Price/Unit</th><th>Lead Days</th><th>Rating</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Price Prediction -->
+  <div class="card mb-4">
+    <div class="card-header bg-warning text-white">📈 Price Prediction</div>
+    <div class="card-body">
+      <label for="materialSelect" class="form-label"><b>Select Material:</b></label>
+      <select class="form-select mb-2" id="materialSelect" onchange="onMaterialChange()">
+        <option value="">Loading materials...</option>
+      </select>
+      <div id="predictionBox">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Create Purchase Order -->
+  <div class="card mb-4">
+    <div class="card-header bg-success text-white">🛒 Create Purchase Order</div>
+    <div class="card-body">
+      <form id="orderForm" class="row g-3">
+        <div class="col-md-4">
+          <label for="materialOrder" class="form-label">Material</label>
+          <select class="form-select" id="materialOrder" onchange="updateSupplierDropdown()">
+            <option value="">Select Material</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label for="quantity" class="form-label">Quantity</label>
+          <input type="number" class="form-control" id="quantity" placeholder="100">
+        </div>
+        <div class="col-md-4">
+          <label for="supplier" class="form-label">Supplier</label>
+          <select class="form-select" id="supplier">
+            <option value="">Select Supplier</option>
+          </select>
+        </div>
+        <div class="col-12">
+          <button type="button" class="btn btn-primary" onclick="createOrder()">Submit Order</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Order List -->
+  <div class="card mb-4">
+    <div class="card-header bg-dark text-white">📜 Order List</div>
+    <div class="card-body">
+      <table class="table table-striped" id="orderTable">
+        <thead class="table-dark"><tr><th>Material</th><th>Quantity</th><th>Supplier</th><th>Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- AI Chatbot -->
+<div class="card mb-4">
+  <div class="card-header bg-warning text-white">💬 AI Chatbot</div>
+  <div class="card-body">
+    <div id="chatBox" style="height:200px; overflow-y:auto; border:1px solid #ccc; padding:10px; margin-bottom:10px; background:#fff;"></div>
+    <div class="input-group">
+      <input type="text" id="chatInput" class="form-control" placeholder="Ask me anything about procurement..." />
+      <button class="btn btn-primary" onclick="sendAIMessage()">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_BASE = "http://127.0.0.1:5000";
+
+// Load materials into dropdowns and sync
+async function loadMaterials() {
+  const res = await fetch(`${API_BASE}/prices/latest`);
+  const data = await res.json();
+
+  const predictionSelect = document.getElementById("materialSelect");
+  const orderMaterialSelect = document.getElementById("materialOrder");
+
+  predictionSelect.innerHTML = "";
+  orderMaterialSelect.innerHTML = "<option value=''>Select Material</option>";
+
+  Object.keys(data).forEach(mat => {
+    predictionSelect.innerHTML += `<option value="${mat}">${mat}</option>`;
+    orderMaterialSelect.innerHTML += `<option value="${mat}">${mat}</option>`;
+  });
+
+  if (predictionSelect.options.length > 0) {
+    predictionSelect.selectedIndex = 0;
+    orderMaterialSelect.selectedIndex = 0;
+    onMaterialChange();
+  }
+}
+
+// When material changes -> update prediction and order supplier
+async function onMaterialChange() {
+  const material = document.getElementById("materialSelect").value;
+  if (!material) return;
+  await loadPrediction();
+  document.getElementById("materialOrder").value = material;
+  updateSupplierDropdown();
+}
+
+// Load prediction for selected material
+async function loadPrediction() {
+  const material = document.getElementById("materialSelect").value;
+  if (!material) return;
+  const res = await fetch(`${API_BASE}/predict/${material}`);
+  const data = await res.json();
+  document.getElementById("predictionBox").innerHTML =
+    `<b>Material:</b> ${data.material}<br>
+     <b>Current:</b> ₹${data.current_price}<br>
+     <b>Predicted:</b> ₹${data.predicted_price}<br>
+     <b>Recommendation:</b> ${data.recommendation}`;
+}
+
+// Load prices
+async function loadPrices() {
+  const res = await fetch(`${API_BASE}/prices/latest`);
+  const data = await res.json();
+  const tbody = document.querySelector("#priceTable tbody");
+  tbody.innerHTML = "";
+  for (const [mat, price] of Object.entries(data)) {
+    tbody.innerHTML += `<tr><td>${mat}</td><td>${price}</td></tr>`;
+  }
+}
+
+// Load inventory
+async function loadInventory() {
+  const res = await fetch(`${API_BASE}/inventory`);
+  const data = await res.json();
+  const tbody = document.querySelector("#inventoryTable tbody");
+  tbody.innerHTML = "";
+  data.forEach(item => {
+    tbody.innerHTML += `<tr><td>${item.material}</td><td>${item.qty}</td><td>${item.unit}</td><td>${item.reorder_threshold}</td></tr>`;
+  });
+}
+
+// Load supplier table (for display only)
+async function loadSuppliers() {
+  const res = await fetch(`${API_BASE}/suppliers/steel`);
+  const data = await res.json();
+  const tbody = document.querySelector("#supplierTable tbody");
+  tbody.innerHTML = "";
+  data.forEach(s => {
+    tbody.innerHTML += `<tr><td>${s.name}</td><td>${s.price_per_unit}</td><td>${s.lead_days}</td><td>${s.rating}</td></tr>`;
+  });
+}
+
+// Update supplier dropdown based on order material
+async function updateSupplierDropdown() {
+  const material = document.getElementById("materialOrder").value;
+  if (!material) return;
+  const res = await fetch(`${API_BASE}/suppliers/${material.toLowerCase()}`);
+  const data = await res.json();
+  const supplierSelect = document.getElementById("supplier");
+  supplierSelect.innerHTML = "<option value=''>Select Supplier</option>";
+  data.forEach(s => {
+    supplierSelect.innerHTML += `<option value="${s.name}">${s.name}</option>`;
+  });
+}
+
+// Simulate price update
+async function updatePrices() {
+  await fetch(`${API_BASE}/prices/update`, { method: "POST" });
+  loadPrices();
+  loadPrediction();
+}
+
+// Create order
+async function createOrder() {
+  const material = document.getElementById("materialOrder").value;
+  const quantity = document.getElementById("quantity").value;
+  const supplier = document.getElementById("supplier").value;
+  if (!material || !quantity || !supplier) { alert("Please fill all fields"); return; }
+  const res = await fetch(`${API_BASE}/orders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ material, quantity, supplier })
+  });
+  const result = await res.json();
+  alert(result.message);
+  loadOrders();
+}
+
+// Load orders
+async function loadOrders() {
+  const res = await fetch(`${API_BASE}/orders`);
+  const data = await res.json();
+  const tbody = document.querySelector("#orderTable tbody");
+  tbody.innerHTML = "";
+  data.forEach(order => {
+    tbody.innerHTML += `<tr>
+      <td>${order.material}</td>
+      <td>${order.quantity}</td>
+      <td>${order.supplier}</td>
+      <td>${order.status}</td>
+    </tr>`;
+  });
+}
+
+// Helper to append messages
+function appendAIMessage(sender, msg) {
+  const chatBox = document.getElementById("chatBox");
+  chatBox.innerHTML += `<div><b>${sender}:</b> ${msg}</div>`;
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+// Send message to Flask AI route
+async function sendAIMessage() {
+  const input = document.getElementById("chatInput");
+  const message = input.value.trim();
+  if (!message) return;
+  appendAIMessage("You", message);
+  input.value = "";
+
+  try {
+    const res = await fetch(`${API_BASE}/chat`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({message})
+    });
+    const data = await res.json();
+    appendAIMessage("Bot", data.reply);
+  } catch (err) {
+    appendAIMessage("Bot", "Error connecting to AI: " + err.message);
+  }
+}
+
+// Initial load
+loadMaterials().then(() => {
+  loadPrices();
+  loadInventory();
+  loadSuppliers();
+  loadOrders();
+});
+
+// Auto-refresh every 10s
+setInterval(() => { loadPrices(); loadPrediction(); }, 10000);
+
+</script>
+</body>
+</html>

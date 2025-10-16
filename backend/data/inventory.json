@@ -1,0 +1,4 @@
+[
+  {"material": "steel", "qty": 120, "unit": "kg", "reorder_threshold": 50},
+  {"material": "copper", "qty": 80, "unit": "kg", "reorder_threshold": 30}
+]
